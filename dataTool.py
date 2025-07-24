@@ -118,7 +118,7 @@ def extract_names(found_objects, sep=None):
         print(f"Extracted names from '{obj}': {extracted_names[obj]}")
     return extracted_names
 
-def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, delimiter=' ', skiprows=1, selected_columns=None, output_file='Summary'):
+def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, selected_columns=None, delimiter=' ', skiprows=1, output='summary'):
 
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
@@ -131,9 +131,12 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
         # Extract time column (always column 0)
         time = data[:, 0]
         
+        # Determine which columns to process
         if selected_columns is None:
-            selected_columns = list(range(1, data.shape[1]))
-
+            # Use all columns except time (column 0)
+            num_columns = data.shape[1]
+            selected_columns = list(range(1, num_columns))  # Skip column 0 (time)
+        
         # Process each selected column
         case_name = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
         frequency = float(name_dicts[freq_Index])
@@ -202,40 +205,59 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
             results[case_name]["column_data"][col_idx]["max_values"].append(period_differences)
             results[case_name]["column_data"][col_idx]["second_half_avgs"].append(second_half_avg)
 
-    # Write results to the output file
-    with open(output_file, "w") as outfile:
+    # Write average max values to the first output file
+    with open(f"{output}_amplitude", "w") as avgfile:
         for case_name, data in results.items():
             # Sort the data by frequency
+            sorted_cols = sorted(data["column_data"].keys())
             sorted_data = sorted(
-                zip(data["frequencies"], *[data["column_data"][col_idx]["max_values"] 
-                                          for col_idx in selected_columns],
-                             *[data["column_data"][col_idx]["second_half_avgs"] 
-                               for col_idx in selected_columns]),
+                zip(data["frequencies"],
+                    *[data["column_data"][col_idx]["second_half_avgs"] for col_idx in sorted_cols]),
                 key=lambda x: x[0]  # Sort by frequency
             )
             
-            # Unpack the sorted data
-            frequencies = [item[0] for item in sorted_data]
-            max_values_all_cols = [item[1:1+len(selected_columns)] for item in sorted_data]
-            avg_values_all_cols = [item[1+len(selected_columns):] for item in sorted_data]
+            # Write case name header
+            avgfile.write(f"{case_name}\n")
             
-            outfile.write(f"{case_name}\n")
-            
-            # Write header with column information
-            header = "Frequency\t"
-            for col_idx in selected_columns:
-                header += f"Col{col_idx}_AvgMax\tCol{col_idx}_MaxValues\t"
-            outfile.write(header.rstrip() + "\n")
+            # Write column headers
+            header = "Frequency\t" + "\t".join(f"Col{col_idx}_AvgMax" for col_idx in sorted_cols)
+            avgfile.write(header + "\n")
             
             # Write data for each frequency
-            for freq, max_vals_cols, avg_vals_cols in zip(frequencies, max_values_all_cols, avg_values_all_cols):
-                line = f"{freq:.3f}\t"
-                for avg_val, max_vals in zip(avg_vals_cols, max_vals_cols):
-                    max_vals_str = "\t".join(f"{val:.3f}" for val in max_vals)
-                    line += f"{avg_val:.3f}\t{max_vals_str}\t"
-                outfile.write(line.rstrip() + "\n")
+            for row in sorted_data:
+                freq = row[0]
+                avg_values = row[1:]
+                line = f"{freq:.3f}\t" + "\t".join(f"{val:.3f}" for val in avg_values)
+                avgfile.write(line + "\n")
             
-            outfile.write("\n")
+            avgfile.write("\n")
+
+    # Write all max values to the second output file
+    with open(f"{output}_maxValues", "w") as maxfile:
+        for case_name, data in results.items():
+            # Sort the data by frequency and columns
+            sorted_cols = sorted(data["column_data"].keys())
+            sorted_data = sorted(
+                zip(data["frequencies"],
+                    *[data["column_data"][col_idx]["max_values"] for col_idx in sorted_cols]),
+                key=lambda x: x[0]  # Sort by frequency
+            )
+            
+            # Write case name header
+            maxfile.write(f"{case_name}\n")
+            
+            # Write data for each column separately
+            for col_idx in sorted_cols:
+                maxfile.write(f"Column {col_idx} Max Values\n")
+                maxfile.write("Frequency\tMaxValues\n")
+                
+                for row in sorted_data:
+                    freq = row[0]
+                    max_values = row[1 + sorted_cols.index(col_idx)]
+                    max_values_str = "\t".join(f"{val:.3f}" for val in max_values)
+                    maxfile.write(f"{freq:.3f}\t{max_values_str}\n")
+                
+                maxfile.write("\n")
 
 def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimiter=',', flux_col_Index=3, 
                   pressure_delimiter='None', pressure_col_Index=1, output_file='Summary'):
@@ -446,6 +468,7 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 
             for case_key in sorted(cases_data.keys(), key=natural_sort_key):
                 files = cases_data[case_key]
+                num_files = len(files)
                 
                 # Add time series (column 0)
                 file_name, data = next(iter(files.items()))
@@ -454,9 +477,12 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 
                 # Add all remaining columns (already filtered during read)
                 for file_name, data in sorted(files.items(), key=lambda x: natural_sort_key(x[0])):
-                    for idx in range(1, data.shape[1]):  # Now all columns are ones we want
-                        all_series.append(data.iloc[:, idx].values)
-                        column_names.append(f"{case_key}_Val{idx}")
+                    num_columns = data.shape[1]
+                    for idx in range(1, num_columns):  # Now all columns are ones we want
+                            all_series.append(data.iloc[:, idx].values)
+                            suffix = "" if num_columns == 2 else f"_Val{idx}"
+                            column_name = f"{case_key}{suffix}" if num_files == 1 else f"{case_key}_{file_name}{suffix}"
+                            column_names.append(column_name)
 
             # Pad series to equal length
             max_len = max(len(s) for s in all_series)
@@ -469,15 +495,22 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
     # Read all data
     print(f"Processing files ... ")
     for obj, name_dicts in found_objs_with_names.items():
-        print(f"Processing file ... {obj}")
-        case_key = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
-        write_key = name_dicts[write_file_Index]
-        file_name = os.path.splitext(os.path.basename(obj))[0]  # Remove extension
-        
-        data = pd.read_csv(obj, sep=delimiter, header=skiprows, comment="#", usecols=usecols)
+        try:
+            case_key = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
+            write_key = name_dicts[write_file_Index]
+            file_name = os.path.splitext(os.path.basename(obj))[0]  # Remove extension
+            
+            data = pd.read_csv(obj, sep=delimiter, header=skiprows, comment="#", usecols=usecols)
 
-        write_data.setdefault(write_key, {}).setdefault(case_key, {})[file_name] = data
+            if data.empty:
+                raise ValueError(f"File contains no data after processing headers/skiprows")
+
+            write_data.setdefault(write_key, {}).setdefault(case_key, {})[file_name] = data
         
+        except Exception as e:
+            error_msg = f"Error processing file '{obj}': {str(e)}"
+            print(f"ERROR: {error_msg}")
+            raise ValueError(error_msg) from e
 
     # Process data for each write key
     processed = {
@@ -504,12 +537,12 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 def main(args):
     
 
-    input_file = "*2.csv"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat"
-    output = "timeseries_roll_w_freq"
+    input_file = "fl[0-9]*"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
+    output = "timeseries_flux_w_freq_test"
 
     exclude_patterns = ['^processor', 'dynamicCode', 'polyMesh']
 
-    found_objs = walk_directory(args.base_dir, input_file, exclude_patterns + args.exclude_dirs, max_search_depth=2)
+    found_objs = walk_directory(args.base_dir, input_file, exclude_patterns + args.exclude_dirs, max_search_depth=8)
     found_objs_with_names = extract_names(found_objs, sep='_')
     
     # Ask the user which functions to run
@@ -521,18 +554,19 @@ def main(args):
     choice = input("\nEnter your choice (or 'q' to quit): ").strip().lower()
     # choice = 4
 
-    if choice == '1':
-        for i in range(1):
-            maxAverage(found_objs_with_names, casename_Index=-6, freq_Index=-5, delimiter=None, skiprows=0, selected_columns=[1], output_file=output)
-    
-    elif choice == '2':
-        PnumaticPower(found_objs_with_names, casename_Index=-6, freq_Index=-5, flux_delimiter='\t', flux_col_Index=3, pressure_delimiter='None', pressure_col_Index=6, output_file=output)
+    for i in range(1):
+        
+        if choice == '1':
+            maxAverage(found_objs_with_names, casename1_Index=-7, casename2_Index=-6, freq_Index=-5, selected_columns=None, delimiter=None, skiprows=0, output=output)
 
-    elif choice == '3':
-        run_plotTools(found_objs_with_names, casename1_Index=-3, casename2_Index=-2, plot_type="motion")
+        elif choice == '2':
+            PnumaticPower(found_objs_with_names, casename_Index=-6, freq_Index=-5, flux_delimiter='\t', flux_col_Index=3, pressure_delimiter=None, pressure_col_Index=6, output_file=output)
 
-    elif choice == '4':
-        integrate_timeseries (found_objs_with_names, casename1_Index=-4, casename2_Index=-5, write_file_Index=-3, output=output, output_format='excel', delimiter=',', skiprows=0, selected_columns=[1])  # delimiter=r"\s+"
+        elif choice == '3':
+            run_plotTools(found_objs_with_names, casename1_Index=-3, casename2_Index=-2, plot_type="motion")
+
+        elif choice == '4':
+            integrate_timeseries (found_objs_with_names, casename1_Index=-6, casename2_Index=-7, write_file_Index=-5, output=output, output_format='excel', delimiter="\s+", skiprows=0, selected_columns=[3])  # delimiter=r"\s+"
 
 
 if __name__ == "__main__":
