@@ -118,7 +118,7 @@ def extract_names(found_objects, sep=None):
         print(f"Extracted names from '{obj}': {extracted_names[obj]}")
     return extracted_names
 
-def maxAverage(found_objs_with_names, casename_Index, freq_Index, delimiter=' ', skiprows=1, col_Index=3, output_file='Summary'):
+def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, delimiter=' ', skiprows=1, col_Index=3, output_file='Summary'):
 
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
@@ -134,7 +134,7 @@ def maxAverage(found_objs_with_names, casename_Index, freq_Index, delimiter=' ',
         values = data[:, col_Index]
 
         # Divide data into periods of approximately T length
-        case_name = f"{name_dicts[casename_Index-1]}_{name_dicts[casename_Index]}"
+        case_name = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
         # case_name = name_dicts[casename_Index]
         frequency = float(name_dicts[freq_Index])
         T = 1 / frequency
@@ -394,7 +394,7 @@ def run_plotTools_batch(found_objs_with_names, casename1_Index=1, casename2_Inde
     except subprocess.CalledProcessError as e:
         print(f"Error running {script_path} for {obj}:\n{e.stderr}")
 
-def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index, write_file_Index, output, output_format, selected_columns=None):
+def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index, write_file_Index, output, output_format, delimiter, skiprows=0, selected_columns=None):
     """
     Reads flux timeseries files and combines them into either CSV files or an Excel file.
     """
@@ -420,7 +420,7 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
                 for file_name, data in sorted(files.items(), key=lambda x: natural_sort_key(x[0])):
                     for idx in range(1, data.shape[1]):  # Now all columns are ones we want
                         all_series.append(data.iloc[:, idx].values)
-                        column_names.append(f"{case_key}_{file_name}_Val{data.columns[idx]}")
+                        column_names.append(f"{case_key}_Val{idx}")
 
             # Pad series to equal length
             max_len = max(len(s) for s in all_series)
@@ -433,11 +433,12 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
     # Read all data
     print(f"Processing files ... ")
     for obj, name_dicts in found_objs_with_names.items():
+        print(f"Processing file ... {obj}")
         case_key = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
         write_key = name_dicts[write_file_Index]
         file_name = os.path.splitext(os.path.basename(obj))[0]  # Remove extension
         
-        data = pd.read_csv(obj, sep=r"\s+", header=None, comment="#", usecols=usecols)
+        data = pd.read_csv(obj, sep=delimiter, header=skiprows, comment="#", usecols=usecols)
 
         write_data.setdefault(write_key, {}).setdefault(case_key, {})[file_name] = data
         
@@ -467,13 +468,13 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 def main(args):
     
 
-    input_file = "fl[0-9]*"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat"
-    output = "Summary_flux"
+    input_file = "*2.csv"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat"
+    output = "timeseries_roll_w_freq"
 
     exclude_patterns = ['^processor', 'dynamicCode', 'polyMesh']
 
-    found_objs = walk_directory(args.base_dir, input_file, exclude_patterns + args.exclude_dirs, max_search_depth=10)
-    found_objs_with_names = extract_names(found_objs, sep='-')
+    found_objs = walk_directory(args.base_dir, input_file, exclude_patterns + args.exclude_dirs, max_search_depth=2)
+    found_objs_with_names = extract_names(found_objs, sep='_')
     
     # Ask the user which functions to run
     print("\nAvailable processing functions:")
@@ -495,7 +496,7 @@ def main(args):
         run_plotTools(found_objs_with_names, casename1_Index=-3, casename2_Index=-2, plot_type="motion")
 
     elif choice == '4':
-        integrate_timeseries (found_objs_with_names, casename1_Index=-7, casename2_Index=-6, write_file_Index=-5, output=output, output_format='excel', selected_columns=[3])
+        integrate_timeseries (found_objs_with_names, casename1_Index=-4, casename2_Index=-5, write_file_Index=-3, output=output, output_format='excel', delimiter=',', skiprows=0, selected_columns=[1])  # delimiter=r"\s+"
 
 
 if __name__ == "__main__":

@@ -1,0 +1,14 @@
+# Ignore specific file
+config.env
+
+# Ignore all files with an extension
+*.log
+gui.*
+
+# Ignore a directory
+node_modules/
+build/
+
+# Ignore but with exceptions
+*.txt
+!important.txt
