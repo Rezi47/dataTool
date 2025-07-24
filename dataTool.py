@@ -118,87 +118,123 @@ def extract_names(found_objects, sep=None):
         print(f"Extracted names from '{obj}': {extracted_names[obj]}")
     return extracted_names
 
-def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, delimiter=' ', skiprows=1, col_Index=3, output_file='Summary'):
+def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, delimiter=' ', skiprows=1, selected_columns=None, output_file='Summary'):
 
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
-        
         try:
             # Use any whitespace as the delimiter
             data = np.loadtxt(obj, delimiter=delimiter, skiprows=skiprows)
         except IOError:
             raise IOError(f"Could not read data file '{obj}'")
 
-        # Extract time and data columns
+        # Extract time column (always column 0)
         time = data[:, 0]
-        values = data[:, col_Index]
+        
+        if selected_columns is None:
+            selected_columns = list(range(1, data.shape[1]))
 
-        # Divide data into periods of approximately T length
+        # Process each selected column
         case_name = f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
-        # case_name = name_dicts[casename_Index]
         frequency = float(name_dicts[freq_Index])
         T = 1 / frequency
         print(f"Processing file '{obj}' with frequency {frequency} Hz")
-        period_differences = []
-        current_period_start = time[0]
-        current_period_values = []
+        
+        # Initialize storage for all columns
+        if case_name not in results:
+            results[case_name] = {
+                "frequencies": [],
+                "column_data": {}  # Will store data for each column
+            }
+        
+        # Store frequency (same for all columns)
+        results[case_name]["frequencies"].append(frequency)
+        
+        # Process each selected column
+        for col_idx in selected_columns:
+            values = data[:, col_idx]
+            
+            # Initialize storage for this column if not exists
+            if col_idx not in results[case_name]["column_data"]:
+                results[case_name]["column_data"][col_idx] = {
+                    "max_values": [],
+                    "second_half_avgs": []
+                }
+            
+            # Divide data into periods of approximately T length
+            period_differences = []
+            current_period_start = time[0]
+            current_period_values = []
 
-        for t, value in zip(time, values):
-            if t >= current_period_start + T:
-                # Calculate max-min for the completed period
-                if current_period_values:
+            for t, value in zip(time, values):
+                if t >= current_period_start + T:
+                    # Calculate max-min for the completed period
+                    if current_period_values:
+                        period_max = max(current_period_values)
+                        period_min = min(current_period_values)
+                        period_differences.append(period_max - period_min)
+                    # Start a new period
+                    current_period_start += T
+                    current_period_values = []
+
+                # Add the value to the current period
+                current_period_values.append(value)
+
+            # Handle the last (possibly incomplete) period
+            if current_period_values:
+                last_period_duration = time[-1] - current_period_start
+                if last_period_duration >= 0.95 * T:
                     period_max = max(current_period_values)
                     period_min = min(current_period_values)
                     period_differences.append(period_max - period_min)
-                # Start a new period
-                current_period_start += T
-                current_period_values = []
 
-            # Add the value to the current period
-            current_period_values.append(value)
+            if not period_differences:
+                raise ValueError(f"No complete periods found in file '{obj}' column {col_idx}")
 
-        # Don't forget the last (possibly incomplete) period
-        if current_period_values:
-            last_period_duration = time[-1] - current_period_start
-            if last_period_duration >= 0.95 * T:
-                period_max = max(current_period_values)
-                period_min = min(current_period_values)
-                period_differences.append(period_max - period_min)
-            # else:
-            #     print(f"Skipping incomplete last period in '{obj}' (duration {last_period_duration:.3f} < {0.9*T:.3f})")
+            # Calculate second half average
+            second_half_avg = (
+                np.mean(period_differences[len(period_differences) // 2:])
+                if len(period_differences) > 1
+                else period_differences[0]
+            )
+            
+            # Store results for this column
+            results[case_name]["column_data"][col_idx]["max_values"].append(period_differences)
+            results[case_name]["column_data"][col_idx]["second_half_avgs"].append(second_half_avg)
 
-        # Calculate averages
-        if not period_differences:
-            raise ValueError(f"No complete periods found in file '{obj}'")
-
-        second_half_avg = (
-            np.mean(period_differences[len(period_differences) // 2:])
-            if len(period_differences) > 1
-            else period_differences[0]
-        )
-
-        if case_name not in results:
-            results[case_name] = {"frequencies": [], "max_values": [], "second_half_avgs": []}
-        results[case_name]["frequencies"].append(frequency)
-        results[case_name]["second_half_avgs"].append(second_half_avg)        
-        results[case_name]["max_values"].append(period_differences)
-
-
-        # Write results to the output file
+    # Write results to the output file
     with open(output_file, "w") as outfile:
         for case_name, data in results.items():
             # Sort the data by frequency
-            data = sorted(
-                zip(data["frequencies"], data["max_values"], data["second_half_avgs"]),
+            sorted_data = sorted(
+                zip(data["frequencies"], *[data["column_data"][col_idx]["max_values"] 
+                                          for col_idx in selected_columns],
+                             *[data["column_data"][col_idx]["second_half_avgs"] 
+                               for col_idx in selected_columns]),
                 key=lambda x: x[0]  # Sort by frequency
             )
-            frequencies, max_values, second_half_avgs = zip(*data)
-
+            
+            # Unpack the sorted data
+            frequencies = [item[0] for item in sorted_data]
+            max_values_all_cols = [item[1:1+len(selected_columns)] for item in sorted_data]
+            avg_values_all_cols = [item[1+len(selected_columns):] for item in sorted_data]
+            
             outfile.write(f"{case_name}\n")
-            outfile.write("Frequencies\tMax_Average(Second Half)\tMax_Values_Per_Period\n")
-            for freq, max_vals, avg_max_h in zip(frequencies, max_values, second_half_avgs):
-                max_vals_h_str = "\t".join(f"{val:.3f}" for val in max_vals)
-                outfile.write(f"{freq:.3f}\t{avg_max_h:.3f}\t{max_vals_h_str}\n")
+            
+            # Write header with column information
+            header = "Frequency\t"
+            for col_idx in selected_columns:
+                header += f"Col{col_idx}_AvgMax\tCol{col_idx}_MaxValues\t"
+            outfile.write(header.rstrip() + "\n")
+            
+            # Write data for each frequency
+            for freq, max_vals_cols, avg_vals_cols in zip(frequencies, max_values_all_cols, avg_values_all_cols):
+                line = f"{freq:.3f}\t"
+                for avg_val, max_vals in zip(avg_vals_cols, max_vals_cols):
+                    max_vals_str = "\t".join(f"{val:.3f}" for val in max_vals)
+                    line += f"{avg_val:.3f}\t{max_vals_str}\t"
+                outfile.write(line.rstrip() + "\n")
+            
             outfile.write("\n")
 
 def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimiter=',', flux_col_Index=3, 
@@ -487,7 +523,7 @@ def main(args):
 
     if choice == '1':
         for i in range(1):
-            maxAverage(found_objs_with_names, casename_Index=-6, freq_Index=-5, delimiter=None, skiprows=0, col_Index=3, output_file=output)
+            maxAverage(found_objs_with_names, casename_Index=-6, freq_Index=-5, delimiter=None, skiprows=0, selected_columns=[1], output_file=output)
     
     elif choice == '2':
         PnumaticPower(found_objs_with_names, casename_Index=-6, freq_Index=-5, flux_delimiter='\t', flux_col_Index=3, pressure_delimiter='None', pressure_col_Index=6, output_file=output)
