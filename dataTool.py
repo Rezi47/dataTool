@@ -45,7 +45,7 @@ def is_number(s):
     except ValueError:
         return False
 
-def walk_directory(base_dir, fi=None, exclude_patterns=None, max_search_depth=1):
+def walk_directory(base_dir, fi, exclude_patterns, max_search_depth):
     """Walk through the directory and find all 'fl.dat' files up to a specific depth."""
     found_objects = []
     base_depth = base_dir.rstrip(os.sep).count(os.sep)
@@ -117,7 +117,7 @@ def walk_directory(base_dir, fi=None, exclude_patterns=None, max_search_depth=1)
 
     return found_objects
 
-def extract_names(found_objects, sep=None):
+def extract_names(found_objects, sep):
     """Extract all parts from the directory path, optionally splitting each part by a separator."""
     extracted_names = {}
 
@@ -133,7 +133,7 @@ def extract_names(found_objects, sep=None):
         print(f"Extracted names from '{obj}': {extracted_names[obj]}")
     return extracted_names
 
-def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, selected_columns=None, delimiter=' ', skiprows=1, output='summary'):
+def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, selected_columns, delimiter, skiprows, output):
 
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
@@ -274,8 +274,7 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
                 
                 maxfile.write("\n")
 
-def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimiter=',', flux_col_Index=3, 
-                  pressure_delimiter='None', pressure_col_Index=1, output_file='Summary'):
+def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimiter, flux_col_Index, pressure_delimiter, pressure_col_Index, output_file):
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
         try:
@@ -405,7 +404,7 @@ def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimi
             print(f"No valid data found for summary file for case {case_name}. Skipping.")
 
     
-def run_plotTools(found_objs_with_names, casename1_Index=1, casename2_Index=1, plot_type="motion", batch=False):
+def run_plotTools(found_objs_with_names, casename1_Index, casename2_Index, plot_type, batch=False):
     """Run an external Python script for each object."""
 
     # Construct the command to run the external script
@@ -428,7 +427,7 @@ def run_plotTools(found_objs_with_names, casename1_Index=1, casename2_Index=1, p
             _run_subprocess_command(command, script_path)
 
 
-def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index, write_file_Index, output, output_format, delimiter, skiprows=0, selected_columns=None):
+def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index, write_file_Index, output, output_format, delimiter, skiprows, selected_columns):
     """
     Reads flux timeseries files and combines them into either CSV files or an Excel file.
     """
@@ -512,7 +511,6 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 
 def main(args):
     
-
     input_file = "log.compressibleInterDyMFoam"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
     output = "Summary"
 
