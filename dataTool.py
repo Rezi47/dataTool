@@ -18,6 +18,21 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+def _run_subprocess_command(command, script_path):
+    """Helper function to run subprocess command."""
+    try:
+        print(f"Running command{command}")
+        result = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error running {script_path}:\n{e.stderr}")
+        return False
+
 def natural_sort_key(s):
     """Natural sort key function for proper numerical sorting"""
     return [int(text) if text.isdigit() else text.lower() 
@@ -390,67 +405,28 @@ def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimi
             print(f"No valid data found for summary file for case {case_name}. Skipping.")
 
     
-def run_plotTools(found_objs_with_names, casename1_Index=1, casename2_Index=1, plot_type="motion"):
+def run_plotTools(found_objs_with_names, casename1_Index=1, casename2_Index=1, plot_type="motion", batch=False):
     """Run an external Python script for each object."""
-                
+
     # Construct the command to run the external script
     script_path = os.path.expanduser("~/plotTool/plotTools.py")  # Use the correct path to the script
 
+    if batch:
+        # Batch mode command
+        command = ["python3", script_path, "-pt", plot_type, "-sd"]
+        for obj, name_dicts in found_objs_with_names.items():
+            command.extend([obj, "-label", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"])
+        _run_subprocess_command(command, script_path)
+    else:
+        # Individual mode
+        for obj, name_dicts in found_objs_with_names.items():
+            command = [
+                "python3", script_path, "-pt", plot_type, "-sd",
+                "-ft", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}",
+                obj, "-label", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"
+            ]
+            _run_subprocess_command(command, script_path)
 
-    
-    # Add all objects and their corresponding labels
-    for obj, name_dicts in found_objs_with_names.items():
-
-        # Start building the command
-        command = ["python3", script_path, "-pt", plot_type, "-sd",
-                  "-ft", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}",
-                  obj, "-label", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"]
-
-        try:
-            # Execute the external script with arguments if needed
-            print(f"Running command: {' '.join(command)}")  # Debug: Print the full command
-            result = subprocess.run(
-            command, 
-            check=True,
-            # capture_output=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # text=True
-            universal_newlines=True
-            )
-            print(f"Output from {script_path} for {obj}:\n{result.stdout}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error running {script_path} for {obj}:\n{e.stderr}")
-
-def run_plotTools_batch(found_objs_with_names, casename1_Index=1, casename2_Index=1, plot_type="motion"):
-    """Run an external Python script for each object."""
-                
-    # Construct the command to run the external script
-    script_path = os.path.expanduser("~/plotTool/plotTools.py")  # Use the correct path to the script
-
-    # Start building the command
-    command = ["python3", script_path, "-pt", plot_type, "-sd"]
-    
-    # Add all objects and their corresponding labels
-    for obj, name_dicts in found_objs_with_names.items():
-        command.extend([obj])  # Add the object
-        command.extend(["-label", f"{name_dicts[casename1_Index]}_{name_dicts[casename2_Index]}"])  # Add the corresponding labels
-
-    try:
-        # Execute the external script with arguments if needed
-        print(f"Running command: {' '.join(command)}")  # Debug: Print the full command
-        result = subprocess.run(
-        command, 
-        check=True,
-        # capture_output=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        # text=True
-        universal_newlines=True
-        )
-        print(f"Output from {script_path} for {obj}:\n{result.stdout}")
-    except subprocess.CalledProcessError as e:
-        print(f"Error running {script_path} for {obj}:\n{e.stderr}")
 
 def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index, write_file_Index, output, output_format, delimiter, skiprows=0, selected_columns=None):
     """
@@ -537,8 +513,8 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 def main(args):
     
 
-    input_file = "fl[0-9]*"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
-    output = "timeseries_flux_w_freq_test"
+    input_file = "log.compressibleInterDyMFoam"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
+    output = "Summary"
 
     exclude_patterns = ['^processor', 'dynamicCode', 'polyMesh']
 
@@ -557,13 +533,13 @@ def main(args):
     for i in range(1):
         
         if choice == '1':
-            maxAverage(found_objs_with_names, casename1_Index=-7, casename2_Index=-6, freq_Index=-5, selected_columns=None, delimiter=None, skiprows=0, output=output)
+            maxAverage(found_objs_with_names, casename1_Index=-7, casename2_Index=-6, freq_Index=-5, selected_columns=[3], delimiter=None, skiprows=0, output=output)
 
         elif choice == '2':
             PnumaticPower(found_objs_with_names, casename_Index=-6, freq_Index=-5, flux_delimiter='\t', flux_col_Index=3, pressure_delimiter=None, pressure_col_Index=6, output_file=output)
 
         elif choice == '3':
-            run_plotTools(found_objs_with_names, casename1_Index=-3, casename2_Index=-2, plot_type="motion")
+            run_plotTools(found_objs_with_names, casename1_Index=-3, casename2_Index=-2, plot_type="motion", batch=False)
 
         elif choice == '4':
             integrate_timeseries (found_objs_with_names, casename1_Index=-6, casename2_Index=-7, write_file_Index=-5, output=output, output_format='excel', delimiter="\s+", skiprows=0, selected_columns=[3])  # delimiter=r"\s+"
