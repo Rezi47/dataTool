@@ -133,7 +133,7 @@ def extract_names(found_objects, sep):
         print(f"Extracted names from '{obj}': {extracted_names[obj]}")
     return extracted_names
 
-def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, selected_columns, delimiter, skiprows, output):
+def calcAmplitude(found_objs_with_names, casename1_Index, casename2_Index, freq_Index, selected_columns, delimiter, skiprows, output):
 
     results = {}
     for obj, name_dicts in found_objs_with_names.items():
@@ -175,12 +175,12 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
             # Initialize storage for this column if not exists
             if col_idx not in results[case_name]["column_data"]:
                 results[case_name]["column_data"][col_idx] = {
-                    "max_values": [],
-                    "second_half_avgs": []
+                    "periods_amp": [],
+                    "amplitude": []
                 }
             
             # Divide data into periods of approximately T length
-            period_differences = []
+            period_amplitude = []
             current_period_start = time[0]
             current_period_values = []
 
@@ -190,7 +190,7 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
                     if current_period_values:
                         period_max = max(current_period_values)
                         period_min = min(current_period_values)
-                        period_differences.append(period_max - period_min)
+                        period_amplitude.append(period_max - period_min)
                     # Start a new period
                     current_period_start += T
                     current_period_values = []
@@ -204,75 +204,77 @@ def maxAverage(found_objs_with_names, casename1_Index, casename2_Index, freq_Ind
                 if last_period_duration >= 0.95 * T:
                     period_max = max(current_period_values)
                     period_min = min(current_period_values)
-                    period_differences.append(period_max - period_min)
+                    period_amplitude.append(period_max - period_min)
 
-            if not period_differences:
+            if not period_amplitude:
                 raise ValueError(f"No complete periods found in file '{obj}' column {col_idx}")
 
             # Calculate second half average
-            second_half_avg = (
-                np.mean(period_differences[len(period_differences) // 2:])
-                if len(period_differences) > 1
-                else period_differences[0]
+            amp = (
+                np.mean(period_amplitude[len(period_amplitude) // 2:])
+                if len(period_amplitude) > 1
+                else period_amplitude[0]
             )
             
             # Store results for this column
-            results[case_name]["column_data"][col_idx]["max_values"].append(period_differences)
-            results[case_name]["column_data"][col_idx]["second_half_avgs"].append(second_half_avg)
+            results[case_name]["column_data"][col_idx]["periods_amp"].append(period_amplitude)
+            results[case_name]["column_data"][col_idx]["amplitude"].append(amp)
 
-    # Write average max values to the first output file
-    with open(f"{output}_amplitude", "w") as avgfile:
+    # Write amplitude values to the first output file
+    with open(f"{output}_amplitude", "w") as ampFile:
         for case_name, data in results.items():
             # Sort the data by frequency
             sorted_cols = sorted(data["column_data"].keys())
             sorted_data = sorted(
                 zip(data["frequencies"],
-                    *[data["column_data"][col_idx]["second_half_avgs"] for col_idx in sorted_cols]),
+                    *[data["column_data"][col_idx]["amplitude"] for col_idx in sorted_cols]),
                 key=lambda x: x[0]  # Sort by frequency
             )
             
             # Write case name header
-            avgfile.write(f"{case_name}\n")
+            ampFile.write(f"{case_name}\n")
             
             # Write column headers
-            header = "Frequency\t" + "\t".join(f"Col{col_idx}_AvgMax" for col_idx in sorted_cols)
-            avgfile.write(header + "\n")
+            header = "Frequency\t" + "\t".join(f"Col{col_idx}_amp" for col_idx in sorted_cols)
+            ampFile.write(header + "\n")
             
             # Write data for each frequency
             for row in sorted_data:
                 freq = row[0]
-                avg_values = row[1:]
-                line = f"{freq:.3f}\t" + "\t".join(f"{val:.3f}" for val in avg_values)
-                avgfile.write(line + "\n")
+                amp_values = row[1:]
+                line = f"{freq:.3f}\t" + "\t".join(f"{val:.3f}" for val in amp_values)
+                ampFile.write(line + "\n")
             
-            avgfile.write("\n")
+            ampFile.write("\n")
+    print(f"Wrote amplitude to {output}_amplitude")
 
-    # Write all max values to the second output file
-    with open(f"{output}_maxValues", "w") as maxfile:
+    # Write all periods amplitude to the second output file
+    with open(f"{output}_periods_amplitude", "w") as p_ampFile:
         for case_name, data in results.items():
             # Sort the data by frequency and columns
             sorted_cols = sorted(data["column_data"].keys())
             sorted_data = sorted(
                 zip(data["frequencies"],
-                    *[data["column_data"][col_idx]["max_values"] for col_idx in sorted_cols]),
+                    *[data["column_data"][col_idx]["periods_amp"] for col_idx in sorted_cols]),
                 key=lambda x: x[0]  # Sort by frequency
             )
             
             # Write case name header
-            maxfile.write(f"{case_name}\n")
+            p_ampFile.write(f"{case_name}\n")
             
             # Write data for each column separately
             for col_idx in sorted_cols:
-                maxfile.write(f"Column {col_idx} Max Values\n")
-                maxfile.write("Frequency\tMaxValues\n")
+                p_ampFile.write(f"Column {col_idx}\n")
+                p_ampFile.write("Frequency\teach period's amplitude\n")
                 
                 for row in sorted_data:
                     freq = row[0]
-                    max_values = row[1 + sorted_cols.index(col_idx)]
-                    max_values_str = "\t".join(f"{val:.3f}" for val in max_values)
-                    maxfile.write(f"{freq:.3f}\t{max_values_str}\n")
+                    periods_amp = row[1 + sorted_cols.index(col_idx)]
+                    periods_amp_str = "\t".join(f"{val:.3f}" for val in periods_amp)
+                    p_ampFile.write(f"{freq:.3f}\t{periods_amp_str}\n")
                 
-                maxfile.write("\n")
+                p_ampFile.write("\n")
+    print(f"Wrote amplitude of rach period to {output}_periods_amplitude")
 
 def PnumaticPower(found_objs_with_names, casename_Index, freq_Index, flux_delimiter, flux_col_Index, pressure_delimiter, pressure_col_Index, output_file):
     results = {}
@@ -511,8 +513,8 @@ def integrate_timeseries(found_objs_with_names, casename1_Index, casename2_Index
 
 def main(args):
     
-    input_file = "log.compressibleInterDyMFoam"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
-    output = "Summary"
+    input_file = "*Variable_2.csv"     # "log.compressibleInterDyMFoam" "patchProbes/0/p" "fl[0-9]*" "height.dat" "*Variable_2.csv"
+    output = "roll"
 
     exclude_patterns = ['^processor', 'dynamicCode', 'polyMesh']
 
@@ -521,7 +523,7 @@ def main(args):
     
     # Ask the user which functions to run
     print("\nAvailable processing functions:")
-    print("1. maxAverage")
+    print("1. calcAmplitude")
     print("2. PnumaticPower")
     print("3. run_plotTools (motion)")
     print("4. integrate_timeseries")
@@ -531,7 +533,7 @@ def main(args):
     for i in range(1):
         
         if choice == '1':
-            maxAverage(found_objs_with_names, casename1_Index=-7, casename2_Index=-6, freq_Index=-5, selected_columns=[3], delimiter=None, skiprows=0, output=output)
+            calcAmplitude(found_objs_with_names, casename1_Index=-6, casename2_Index=-4, freq_Index=-3, selected_columns=[1], delimiter=',', skiprows=1, output=output)
 
         elif choice == '2':
             PnumaticPower(found_objs_with_names, casename_Index=-6, freq_Index=-5, flux_delimiter='\t', flux_col_Index=3, pressure_delimiter=None, pressure_col_Index=6, output_file=output)
